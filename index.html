@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>GPS Map Data</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+
+      h1 {
+        text-align: center;
+        margin-top: 20px;
+      }
+
+      .controls {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .controls input,
+      .controls button {
+        margin: 5px;
+      }
+
+      #map {
+        height: 80vh;
+        width: 90vw;
+        max-width: 1200px;
+      }
+
+      .iframe-container {
+        margin-top: 20px;
+        width: 450px;
+        height: 260px;
+        border: 1px solid #cccccc;
+      }
+
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+
+      .framediv {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      @media (max-width: 1024px) {
+        #map {
+          height: 60vh;
+          width: 100vw;
+        }
+
+        .controls {
+          width: 100%;
+          padding: 10px;
+          box-sizing: border-box;
+        }
+
+        .controls input,
+        .controls button {
+          width: calc(50% - 10px);
+          margin: 5px 5px;
+        }
+
+        .iframe-container {
+          width: calc(50% - 10px);
+          height: 220px;
+        }
+      }
+
+      @media (max-width: 768px) {
+        #map {
+          height: 50vh;
+          width: 100vw;
+        }
+
+        .controls {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .controls input,
+        .controls button {
+          width: 100%;
+          margin: 5px 0;
+        }
+
+        .iframe-container {
+          width: calc(100% - 10px);
+          height: 200px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        #map {
+          height: 40vh;
+          width: 100vw;
+        }
+
+        .controls {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .controls input,
+        .controls button {
+          width: 100%;
+          margin: 5px 0;
+        }
+
+        .iframe-container {
+          width: calc(100% - 10px);
+          height: 180px;
+        }
+      }
+    </style>
+
+  </head>
+  <body>
+    <h1>GPS Map Data</h1>
+    <div class="controls">
+      <label for="channelID">Channel ID:</label>
+      <input
+        type="text"
+        id="channelID"
+        placeholder="Enter Channel ID"
+        value="2587625"
+      />
+      <label for="apiKey">API Key:</label>
+      <input
+        type="text"
+        id="apiKey"
+        placeholder="Enter API Key"
+        value="0UMBFU2FDRF7XXQZ"
+      />
+      <button onclick="saveSettings()">Save Settings</button>
+      <button onclick="updateMap()">Update Map</button>
+    </div>
+    <div id="map"></div>
+    <div class="framediv">
+      <div class="iframe-container">
+        <iframe id="chartIframe1" src="" frameborder="0"></iframe>
+      </div>
+      <div class="iframe-container">
+        <iframe id="chartIframe2" src="" frameborder="0"></iframe>
+      </div>
+      <div class="iframe-container">
+        <iframe id="chartIframe3" src="" frameborder="0"></iframe>
+      </div>
+      
+    </div>
+    <div class="framediv">
+        <div class="iframe-container">
+            <iframe id="chartIframe4" src="" frameborder="0"></iframe>
+          </div>
+          <div class="iframe-container">
+            <iframe id="chartIframe5" src="" frameborder="0"></iframe>
+          </div>
+    </div>
+
+    <script>
+      // Initialize the map
+      var map = L.map("map").setView([0, 0], 2);
+
+      // Add a tile layer to the map (OpenStreetMap tiles)
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      // Variable to store markers
+      var markers = [];
+      var liveMarker = null;
+
+      // Function to fetch data from ThingSpeak and update the map
+      function updateMap() {
+        var channelID = localStorage.getItem("channelID") || "2587625";
+        var apiKey = localStorage.getItem("apiKey") || "0UMBFU2FDRF7XXQZ";
+        var fieldLatitude = "field6"; // Update according to your field number
+        var fieldLongitude = "field7"; // Update according to your field number
+
+        if (!channelID || !apiKey) {
+          alert("Please enter both Channel ID and API Key.");
+          return;
+        }
+
+        var url = `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${apiKey}&results=100`;
+
+        fetch(url)
+          .then((response) => response.json())
+          .then((data) => {
+            var feeds = data.feeds;
+
+            // Clear existing markers
+            markers.forEach((marker) => map.removeLayer(marker));
+            markers = [];
+
+            if (liveMarker) {
+              map.removeLayer(liveMarker);
+            }
+
+            feeds.forEach((feed, index) => {
+              var lat = parseFloat(feed[fieldLatitude]);
+              var lon = parseFloat(feed[fieldLongitude]);
+              if (!isNaN(lat) && !isNaN(lon)) {
+                var marker;
+                if (index === feeds.length - 1) {
+                  // The most recent data
+                  marker = L.marker([lat, lon], {
+                    icon: L.icon({
+                      iconUrl:
+                        "https://maps.google.com/mapfiles/ms/icons/red-dot.png", // Using a custom red marker
+                      iconSize: [32, 32],
+                      iconAnchor: [16, 32],
+                      popupAnchor: [0, -32],
+                      shadowUrl:
+                        "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
+                      shadowSize: [41, 41],
+                    }),
+                  })
+                    .addTo(map)
+                    .bindPopup(`Latitude: ${lat}<br>Longitude: ${lon}`);
+                  liveMarker = marker;
+                } else {
+                  // Historical data
+                  marker = L.marker([lat, lon])
+                    .addTo(map)
+                    .bindPopup(`Latitude: ${lat}<br>Longitude: ${lon}`);
+                }
+                markers.push(marker);
+              }
+            });
+
+            // Fit the map to the markers
+            if (markers.length > 0) {
+              var bounds = L.latLngBounds(
+                markers.map((marker) => marker.getLatLng())
+              );
+              map.fitBounds(bounds);
+            }
+          })
+          .catch((error) =>
+            console.error("Error fetching data from ThingSpeak:", error)
+          );
+
+        // Update iframe src
+        updateIframes(channelID);
+      }
+
+      // Function to update all iframes with new data
+      function updateIframes(channelID) {
+        for (var i = 1; i <= 5; i++) {
+          var iframeSrc = `https://thingspeak.com/channels/${channelID}/charts/${i}?bgcolor=%23ffffff&color=%23d62020&dynamic=true&results=60&type=line&update=15`;
+          document.getElementById(`chartIframe${i}`).src = iframeSrc;
+        }
+      }
+
+      // Function to save settings
+      function saveSettings() {
+        var channelID = document.getElementById("channelID").value;
+        var apiKey = document.getElementById("apiKey").value;
+
+        if (channelID && apiKey) {
+          localStorage.setItem("channelID", channelID);
+          localStorage.setItem("apiKey", apiKey);
+          alert("Settings saved!");
+        } else {
+          alert("Please enter both Channel ID and API Key.");
+        }
+      }
+
+      // Load settings from local storage
+      function loadSettings() {
+        var channelID = localStorage.getItem("channelID") || "2587625";
+        var apiKey = localStorage.getItem("apiKey") || "0UMBFU2FDRF7XXQZ";
+
+        document.getElementById("channelID").value = channelID;
+        document.getElementById("apiKey").value = apiKey;
+      }
+
+      // Initial call to load settings and update the map
+      loadSettings();
+      updateMap();
+
+      // Periodically update the map every 15 seconds
+      setInterval(updateMap, 15000);
+    </script>
+  </body>
+</html>
